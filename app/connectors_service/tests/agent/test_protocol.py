@@ -85,6 +85,7 @@ class TestConnectorCheckingHandler:
         unit_mock.unit_type = "Something else"
 
         client_mock.units = [unit_mock, input_mock]
+        config_wrapper_mock.has_elasticsearch_config.return_value = False
 
         checkin_handler = ConnectorCheckinHandler(
             client_mock,
@@ -97,6 +98,35 @@ class TestConnectorCheckingHandler:
 
         assert not config_wrapper_mock.try_update.called
         assert not service_manager_mock.restart.called
+
+    @pytest.mark.asyncio
+    async def test_apply_from_client_when_only_input_is_reported_and_output_is_known(
+        self, connector_record_manager_mock, input_mock
+    ):
+        client_mock = Mock()
+        config_wrapper_mock = Mock()
+        config_wrapper_mock.has_elasticsearch_config.return_value = True
+        config_wrapper_mock.try_update.return_value = True
+        service_manager_mock = Mock()
+
+        client_mock.units = [input_mock]
+
+        checkin_handler = ConnectorCheckinHandler(
+            client_mock,
+            config_wrapper_mock,
+            service_manager_mock,
+        )
+        checkin_handler.connector_record_manager = connector_record_manager_mock
+
+        await checkin_handler.apply_from_client()
+
+        config_wrapper_mock.try_update.assert_called_once_with(
+            connector_id="test-id",
+            service_type="test-service",
+            output_unit=None,
+        )
+        assert connector_record_manager_mock.ensure_connector_records_exist.called
+        assert service_manager_mock.restart.called
 
     @pytest.mark.asyncio
     async def test_apply_from_client_when_units_with_output_and_non_updating_config(

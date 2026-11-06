@@ -48,13 +48,6 @@ class ConnectorsAgentConfigurationWrapper:
         the method returns False.
         """
 
-        source = output_unit.config.source
-
-        # TODO: find a good link to what this object is.
-        has_hosts = source.fields.get("hosts")
-        has_api_key = source.fields.get("api_key")
-        has_basic_auth = source.fields.get("username") and source.fields.get("password")
-
         assumed_configuration = {}
 
         # Connector-related
@@ -64,6 +57,18 @@ class ConnectorsAgentConfigurationWrapper:
                 "service_type": service_type,
             }
         ]
+
+        # The output is only part of the check-in when it changed, in that case
+        # only the connectors are updated and the credentials received earlier are kept.
+        if output_unit is None:
+            return self._apply_update(assumed_configuration)
+
+        source = output_unit.config.source
+
+        # TODO: find a good link to what this object is.
+        has_hosts = source.fields.get("hosts")
+        has_api_key = source.fields.get("api_key")
+        has_basic_auth = source.fields.get("username") and source.fields.get("password")
 
         # Log-related
         assumed_configuration["service"] = {}
@@ -99,6 +104,9 @@ class ConnectorsAgentConfigurationWrapper:
 
             assumed_configuration["elasticsearch"] = es_creds
 
+        return self._apply_update(assumed_configuration)
+
+    def _apply_update(self, assumed_configuration):
         if self.config_changed(assumed_configuration):
             logger.debug("Changes detected for connectors-relevant configurations")
             # This is a partial update.
@@ -160,6 +168,10 @@ class ConnectorsAgentConfigurationWrapper:
             return current_config_log_level != new_config_log_level
 
         def _elasticsearch_config_changed():
+            if "elasticsearch" not in new_config:
+                # Nothing was received about Elasticsearch, so there is nothing to compare
+                return False
+
             return current_config.get("elasticsearch") != new_config.get(
                 "elasticsearch"
             )
@@ -225,3 +237,7 @@ class ConnectorsAgentConfigurationWrapper:
 
     def get_specific_config(self):
         return self.specific_config
+
+    def has_elasticsearch_config(self):
+        """Tells if Elasticsearch credentials were already received from Agent."""
+        return bool(self.specific_config.get("elasticsearch"))

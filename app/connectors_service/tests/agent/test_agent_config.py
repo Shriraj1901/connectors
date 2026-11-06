@@ -272,6 +272,72 @@ def test_try_update_multiple_times_does_not_reset_config_values():
     assert config_wrapper.get()["service"]["log_level"] == log_level
 
 
+def test_try_update_without_output_keeps_credentials_and_updates_connector():
+    hosts = ["https://localhost:9200"]
+    api_key = "lemme_in"
+    new_connector_id = "another-connector"
+
+    config_wrapper = prepare_config_wrapper()
+    config_wrapper.try_update(
+        connector_id=CONNECTOR_ID,
+        service_type=SERVICE_TYPE,
+        output_unit=prepare_unit_mock({"hosts": hosts, "api_key": api_key}, "DEBUG"),
+    )
+
+    # Agent reports only the input when just the connector id changed in the policy
+    assert (
+        config_wrapper.try_update(
+            connector_id=new_connector_id,
+            service_type=SERVICE_TYPE,
+            output_unit=None,
+        )
+        is True
+    )
+
+    assert config_wrapper.get()["connectors"] == [
+        {"connector_id": new_connector_id, "service_type": SERVICE_TYPE}
+    ]
+    assert config_wrapper.get()["elasticsearch"]["host"] == hosts[0]
+    assert config_wrapper.get()["elasticsearch"]["api_key"] == api_key
+    assert config_wrapper.get()["service"]["log_level"] == "DEBUG"
+
+
+def test_try_update_without_output_and_without_changes():
+    hosts = ["https://localhost:9200"]
+
+    config_wrapper = prepare_config_wrapper()
+    config_wrapper.try_update(
+        connector_id=CONNECTOR_ID,
+        service_type=SERVICE_TYPE,
+        output_unit=prepare_unit_mock({"hosts": hosts, "api_key": "lemme_in"}, None),
+    )
+
+    assert (
+        config_wrapper.try_update(
+            connector_id=CONNECTOR_ID,
+            service_type=SERVICE_TYPE,
+            output_unit=None,
+        )
+        is False
+    )
+
+
+def test_has_elasticsearch_config():
+    config_wrapper = prepare_config_wrapper()
+
+    assert config_wrapper.has_elasticsearch_config() is False
+
+    config_wrapper.try_update(
+        connector_id=CONNECTOR_ID,
+        service_type=SERVICE_TYPE,
+        output_unit=prepare_unit_mock(
+            {"hosts": ["https://localhost:9200"], "api_key": "lemme_in"}, None
+        ),
+    )
+
+    assert config_wrapper.has_elasticsearch_config() is True
+
+
 def test_config_changed_when_new_variables_are_passed():
     hosts = ["https://localhost:9200"]
     api_key = "lemme_in_lalala"
