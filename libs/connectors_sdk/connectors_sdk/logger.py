@@ -10,6 +10,7 @@ Logger -- sets the logging and provides a `logger` global object.
 import contextlib
 import inspect
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from functools import wraps
@@ -40,8 +41,9 @@ class ColorFormatter(logging.Formatter):
 
     DATE_FMT = "%H:%M:%S"
 
-    def __init__(self, prefix):
+    def __init__(self, prefix, color=True):
         self.custom_format = "[" + prefix + "][%(asctime)s][%(levelname)s] %(message)s"
+        self.color = color
         super().__init__(datefmt=self.DATE_FMT)
         self.local_tz = tzlocal()
 
@@ -62,8 +64,29 @@ class ColorFormatter(logging.Formatter):
         return s
 
     def format(self, record):  # noqa: A003
-        self._style._fmt = self.COLORS[record.levelno] + self.custom_format + self.RESET
+        if self.color:
+            self._style._fmt = (
+                self.COLORS[record.levelno] + self.custom_format + self.RESET
+            )
+        else:
+            self._style._fmt = self.custom_format
         return super().format(record)
+
+
+def supports_color(stream):
+    """Tells if ANSI colors should be written to the given stream.
+
+    Colors are only useful on a terminal. When the output is piped or collected
+    (for example the logs of a container read by Filebeat) the escape sequences
+    end up in the log lines, so they are left out. `NO_COLOR` turns them off
+    explicitly, see https://no-color.org
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    try:
+        return bool(stream.isatty())
+    except (AttributeError, ValueError):
+        return False
 
 
 class DocumentLogger:
@@ -171,17 +194,19 @@ def normalize_log_level(log_level):
 def set_logger(log_level=logging.INFO, filebeat=False):
     global logger
     log_level = normalize_log_level(log_level)
-    if filebeat:
-        formatter = ecs_logging.StdlibFormatter()
-    else:
-        formatter = ColorFormatter("FMWK")
-
     if logger is None:
         logging.setLoggerClass(ExtraLogger)
         logger = logging.getLogger("connectors")
         logger.handlers.clear()
         handler = logging.StreamHandler()
         logger.addHandler(handler)
+
+    if filebeat:
+        formatter = ecs_logging.StdlibFormatter()
+    else:
+        formatter = ColorFormatter(
+            "FMWK", color=supports_color(logger.handlers[0].stream)
+        )
 
     logger.propagate = False
     logger.setLevel(log_level)
@@ -199,7 +224,7 @@ def set_extra_logger(logger, log_level=logging.INFO, prefix="BYOC", filebeat=Fal
     if filebeat:
         handler.setFormatter(ecs_logging.StdlibFormatter())
     else:
-        formatter = ColorFormatter(prefix)
+        formatter = ColorFormatter(prefix, color=supports_color(handler.stream))
         handler.setFormatter(formatter)
     handler.setLevel(log_level)
     logger.addHandler(handler)

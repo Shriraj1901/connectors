@@ -18,6 +18,7 @@ from connectors_sdk.logger import (
     logger,
     set_extra_logger,
     set_logger,
+    supports_color,
     tracer,
 )
 
@@ -192,7 +193,8 @@ async def test_trace_async_gen():
         ("critical", ColorFormatter.BOLD_RED),
     ],
 )
-def test_colored_logging(log_level, color):
+def test_colored_logging(log_level, color, monkeypatch):
+    monkeypatch.setattr(connectors_sdk.logger, "supports_color", lambda stream: True)
     with unset_logger():
         logger = set_logger(logging.DEBUG, filebeat=False)
         logs = []
@@ -245,3 +247,71 @@ def test_colored_logging_with_filebeat():
         assert len(logs) == 5
         for log in logs:
             assert not log.startswith("\x1b")
+
+
+class _Stream:
+    def __init__(self, tty):
+        self.tty = tty
+
+    def isatty(self):
+        return self.tty
+
+
+def test_supports_color_on_a_terminal(monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert supports_color(_Stream(True))
+
+
+def test_supports_color_is_off_when_output_is_not_a_terminal(monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert not supports_color(_Stream(False))
+    assert not supports_color(object())
+
+
+def test_supports_color_is_off_when_stream_is_closed(monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    class Closed:
+        def isatty(self):
+            msg = "I/O operation on closed file"
+            raise ValueError(msg)
+
+    assert not supports_color(Closed())
+
+
+def test_supports_color_respects_no_color(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert not supports_color(_Stream(True))
+
+
+@pytest.mark.parametrize("extra", [False, True])
+def test_no_color_codes_when_output_is_not_a_terminal(extra, monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    logs = []
+
+    if extra:
+        extra_logger = logging.getLogger("test_no_color_extra_logger")
+        try:
+            set_extra_logger(extra_logger, log_level=logging.DEBUG, prefix="XTRA")
+            extra_logger.handlers[-1].stream = _Stream(False)
+            extra_logger.handlers[-1].stream.write = logs.append
+            extra_logger.handlers[-1].stream.flush = lambda: None
+            extra_logger.info("foobar")
+        finally:
+            extra_logger.handlers.clear()
+    else:
+        with unset_logger():
+            logger = set_logger(logging.DEBUG, filebeat=False)
+            assert not logger.handlers[0].formatter.color
+            logger.handlers[0].stream.write = logs.append
+            logger.info("foobar")
+
+    assert len(logs) == 1
+    assert "" not in logs[0]
+    assert "foobar" in logs[0]
+
+
+def test_formatter_without_color():
+    formatter = ColorFormatter("FMWK", color=False)
+    record = logging.LogRecord("x", logging.ERROR, __file__, 1, "boom", None, None)
+    assert "" not in formatter.format(record)
