@@ -222,6 +222,7 @@ class ConfluenceDataSource(BaseDataSource):
             "confluence_url": {
                 "label": "Confluence URL",
                 "order": 10,
+                "tooltip": "Base URL of your Confluence instance. E.g. https://example.atlassian.net for Confluence Cloud or https://confluence.example.com for Confluence Server and Data Center.",
                 "type": "str",
             },
             "spaces": {

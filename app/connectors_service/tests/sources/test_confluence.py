@@ -2420,3 +2420,10 @@ async def test_fetch_documents_with_html():
         source.confluence_client.index_labels = True
         async for response, _, _, _, _, _ in source.fetch_documents(api_query=""):
             assert response == EXPECTED_PAGE
+
+
+def test_confluence_url_has_a_tooltip():
+    config = ConfluenceDataSource.get_default_configuration()
+
+    assert config["confluence_url"]["label"] == "Confluence URL"
+    assert "atlassian.net" in config["confluence_url"]["tooltip"]
